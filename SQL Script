@@ -1,0 +1,127 @@
+SELECT * FROM Housing..Tennessee
+
+-- Seperate address, city and state from owner address. Create new column for each new field --
+
+SELECT *
+FROM Housing..Tennessee;
+
+SELECT 
+PARSENAME(REPLACE(OwnerAddress, ',','.') , 1), -- State
+PARSENAME(REPLACE(OwnerAddress, ',','.') , 2), -- City 
+PARSENAME(REPLACE(OwnerAddress, ',','.') , 3) -- Address 
+FROM Housing..Tennessee;
+
+ALTER TABLE Housing..Tennessee
+ADD Owner_Address varchar(255);
+
+UPDATE Housing..Tennessee
+SET Owner_Address = PARSENAME(REPLACE(OwnerAddress, ',','.') , 3);
+
+ALTER TABLE Housing..Tennessee
+ADD Owner_City varchar(255);
+
+UPDATE Housing..Tennessee
+SET Owner_City = PARSENAME(REPLACE(OwnerAddress, ',','.') , 2);
+
+ALTER TABLE Housing..Tennessee
+ADD Owner_State varchar(255);
+
+UPDATE Housing..Tennessee
+SET Owner_State = PARSENAME(REPLACE(OwnerAddress, ',','.') , 1);
+
+ALTER TABLE Housing..Tennessee
+DROP COLUMN OwnerAddress;
+
+----------- Populate property address --------------
+
+SELECT *
+FROM Housing..Tennessee
+WHERE PropertyAddress IS NULL
+ORDER BY ParcelID; -- 35 null property address values 
+
+SELECT x.ParcelID, x.PropertyAddress, y.ParcelID, y.PropertyAddress, ISNULL(x.PropertyAddress, y.PropertyAddress)
+FROM Housing..Tennessee x
+JOIN Housing..Tennessee y
+	ON x.ParcelID = y.ParcelID
+	AND x.[UniqueID ] != y.[UniqueID ]
+WHERE x.PropertyAddress IS NULL; -- use Parcel ID to identify properties with same address and fill null values with corresponding address 
+
+UPDATE x
+SET PropertyAddress = ISNULL(x.PropertyAddress, y.PropertyAddress)
+FROM Housing..Tennessee x
+JOIN Housing..Tennessee y
+	ON x.ParcelID = y.ParcelID
+	AND x.[UniqueID ] != y.[UniqueID ]
+WHERE x.PropertyAddress IS NULL; -- Update table to fill null values in property address 
+
+---------- Seperate property address from city and create two new columns ---------
+
+ALTER TABLE Housing..Tennessee
+ADD Property_Address varchar(255);
+
+ALTER TABLE Housing..Tennessee
+ADD City varchar(255);
+
+SELECT SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress)-1) AS Address 
+,SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress)+1, LEN(PropertyAddress)) AS City 
+FROM Housing..Tennessee;
+
+UPDATE Housing..Tennessee
+SET Property_Address = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress)-1);
+
+UPDATE Housing..Tennessee
+SET City = SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress)+1, LEN(PropertyAddress));
+
+ALTER TABLE Housing..Tennessee
+DROP COLUMN PropertyAddress;
+
+---------- Drop time from SaleDate column ----------
+
+ALTER TABLE Housing..Tennessee
+ADD Sale_Date Date;
+
+UPDATE Housing..Tennessee
+SET Sale_Date = CONVERT(Date, SaleDate);
+
+ALTER TABLE Housing..['Nashville $']
+DROP COLUMN SaleDate;
+
+-- Sold as vacant column has entries Y, Yes, N, No. Standardize entries to Yes/ No format --
+
+SELECT SoldAsVacant,
+CASE 
+	WHEN SoldAsVacant = 'Y' THEN 'Yes'
+	WHEN SoldAsVacant = 'N' THEN 'No'
+	ELSE SoldAsVacant -- keeps original value from SoldAsVacant column 
+END
+FROM Housing..Tennessee;
+
+UPDATE Housing..Tennessee
+SET SoldAsVacant =	CASE 
+						WHEN SoldAsVacant = 'Y' THEN 'Yes'
+						WHEN SoldAsVacant = 'N' THEN 'No'
+						ELSE SoldAsVacant -- keeps original value from SoldAsVacant column 
+					END; 
+
+SELECT DISTINCT(SoldAsVacant), COUNT(1)
+FROM Housing..Tennessee
+GROUP BY SoldAsVacant;
+
+---------- Removing duplicate values ----------
+
+WITH duplicate AS (
+SELECT *, 
+ROW_NUMBER() OVER(
+					PARTITION BY ParcelID, -- Fields that should not have duplicate values 
+								Property_Address, 
+								Owner_Address,
+								Sale_Date,
+								OwnerName, 
+								LegalReference,
+								SalePrice
+								ORDER BY UniqueID) row
+FROM Housing..Tennessee
+)
+SELECT * -- DELETE (to delete duplicate values)
+FROM duplicate
+WHERE row > 1; -- 104 duplicate rows in Housing..Tennessee
